@@ -1,6 +1,7 @@
 import datetime
 import time
 
+from pygments.styles import default
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 
@@ -87,7 +88,7 @@ def wait_for_page_load(timeout_sec, fun, *args, **kwargs):
     return
 
 
-def nav_to_date(year, month, day):
+def nav_to_date(year, month, day, timeout=default_timeout):
     """
     Navigate the page to the schedule for a particular date.
 
@@ -101,11 +102,10 @@ def nav_to_date(year, month, day):
     """
 
     today = datetime.date.today()
-    if year < today.year or (year == today.year and month < today.month) or \
-            (year == today.year and month == today.month and day < today.day):
-        raise ValueError('Date must fall between today and two years from today.')
-    if year > today.year + 2 or (year == today.year + 2 and month > today.month) or \
-            (year == today.year + 2 and month == today.month and day >= today.day):
+    two_years_from_today = today + datetime.timedelta(2*365) # add days to avoid leap year problems
+    requested_date = datetime.date(year, month, day)
+
+    if requested_date < today or requested_date > two_years_from_today:
         raise ValueError('Date must fall between today and two years from today.')
 
     js_source = '''
@@ -117,7 +117,7 @@ def nav_to_date(year, month, day):
     ASPx.SchedulerGotoDate(cal, 'ctl00_contentMain_schedulerMain_viewNavigatorBlock_ctl00');
     ''' % (year, month - 1, day, 0)  # for some reason, calendar objects represent months starting with 0: January
 
-    wait_for_page_load(default_timeout, browser.execute_script, js_source)
+    wait_for_page_load(timeout, browser.execute_script, js_source)
 
     # check results
     loaded_ymd = get_date()

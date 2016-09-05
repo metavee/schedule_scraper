@@ -8,9 +8,13 @@ import urlparse
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 
+def init_browser():
+    global browser
+    browser = webdriver.Chrome()
 
 def main():
     # open the page
+    init_browser()
     nav_to_url(page_url_stub + pac_pool_id)
 
     nav_to_date(2018, 6, 15)
@@ -23,7 +27,6 @@ def main():
 # timeout interval (seconds)
 default_timeout = 59.
 
-browser = webdriver.Chrome()
 page_url_stub = 'https://nike.uwaterloo.ca/FacilityScheduling/FacilitySchedule.aspx?FacilityId='
 pac_pool_id = '5d72208a-069d-4931-aaa6-9527346efc6f'
 
@@ -190,11 +193,6 @@ def get_events():
             'end': end_time,
             'info': info
         })
-
-        print 'Start time: %d:%02d' % (start_time.hour, start_time.minute)
-        print 'End time: %d:%02d' % (end_time.hour, end_time.minute)
-        print 'Event: %s' % info
-        print
 
     return parsed_events
 

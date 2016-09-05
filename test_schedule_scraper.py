@@ -1,13 +1,79 @@
 import datetime
+import os
 from unittest import TestCase
 
 import schedule_scraper as scsc
 
+class TestArchivedPages(TestCase):
 
-class Test_schedule_scraper(TestCase):
+    """
+    Tests running on offline resources.
+    Kept separate from other tests for speed purposes.
+
+    Also, since they're offline, they will always be reachable, and the results will always be known.
+    """
+
+    file_20160921 = os.path.join('test_resources', '20160921_schedule.html')
+    file_20170902 = os.path.join('test_resources', '20170902_schedule.html')
 
     @classmethod
     def setUpClass(cls):
+        scsc.init_browser()
+
+    @classmethod
+    def tearDownClass(cls):
+        scsc.browser.quit()
+
+    def test_get_date(self):
+        """
+        Load a page with a known date, and ensure that it can be read correctly.
+        """
+
+        scsc.nav_to_local_file(self.file_20160921)
+        self.assertEqual((2016, 9, 21), scsc.get_date())
+
+    def test_get_events_empty(self):
+        """
+        Load a page with no events listed, and ensure that it is correctly parsed.
+        """
+
+        scsc.nav_to_local_file(self.file_20170902)
+        events = scsc.get_events()
+        self.assertEqual(len(events), 0)
+
+    def test_get_events(self):
+        """
+        Load a page with many events, some overlapping in time, and ensure that it is correctly parsed.
+        """
+
+        scsc.nav_to_local_file(self.file_20160921)
+        events = scsc.get_events()
+
+        # check that the overall number of events is correct
+        self.assertEqual(len(events), 11)
+
+        # look at a few events
+        ev4 = events[4]
+        self.assertEqual(ev4['start'], datetime.datetime(2016, 9, 21, 13, 0))
+        self.assertEqual(ev4['end'], datetime.datetime(2016, 9, 21, 15, 0))
+        self.assertEqual(ev4['info'], 'Subject: Varsity Swimming')
+
+        ev5 = events[5]
+        self.assertEqual(ev5['start'], datetime.datetime(2016, 9, 21, 13, 0))
+        self.assertEqual(ev5['end'], datetime.datetime(2016, 9, 21, 14, 0))
+        self.assertEqual(ev5['info'], 'Course: Fall 2016 - Fitness Swimmer - Co-ed - 10 classes - Fit Swim - Wed')
+
+
+class TestLiveSite(TestCase):
+
+    """
+    Tests running on live website.
+    These tests can be quite slow, due to the loading times on the server.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        scsc.init_browser()
         scsc.nav_to_url(scsc.page_url_stub + scsc.pac_pool_id)
 
     @classmethod

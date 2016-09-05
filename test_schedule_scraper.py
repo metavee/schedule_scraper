@@ -3,7 +3,12 @@ from unittest import TestCase
 
 import schedule_scraper as scsc
 
+
 class Test_schedule_scraper(TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        scsc.nav_to_url(scsc.page_url_stub + scsc.pac_pool_id)
 
     @classmethod
     def tearDownClass(cls):
@@ -23,17 +28,15 @@ class Test_schedule_scraper(TestCase):
         year, month, day = year_from_tomorrow.year, year_from_tomorrow.month, year_from_tomorrow.day
         self.assertRaises(ValueError, scsc.nav_to_date, year, month, day)
 
-
     def test_nav_to_date(self):
         # try navigating to a week from today
         today = datetime.date.today()
         today_plus_7 = today + datetime.timedelta(7)
         year, month, day = today_plus_7.year, today_plus_7.month, today_plus_7.day
         scsc.nav_to_date(year, month, day)
-        self.assertEqual( (year, month, day), scsc.get_date() )
+        self.assertEqual((year, month, day), scsc.get_date())
 
         # navigate back to today
         year, month, day = today.year, today.month, today.day
         scsc.nav_to_date(year, month, day)
         self.assertEqual((year, month, day), scsc.get_date())
-

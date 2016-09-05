@@ -1,12 +1,18 @@
+import codecs
 import datetime
+import os
 import time
+import urllib
+import urlparse
 
-from pygments.styles import default
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 
 
 def main():
+    # open the page
+    nav_to_url(page_url_stub + pac_pool_id)
+
     nav_to_date(2018, 6, 15)
     print get_date()
 
@@ -17,11 +23,10 @@ def main():
 # timeout interval (seconds)
 default_timeout = 59.
 
-# open the page
 browser = webdriver.Chrome()
 page_url_stub = 'https://nike.uwaterloo.ca/FacilityScheduling/FacilitySchedule.aspx?FacilityId='
 pac_pool_id = '5d72208a-069d-4931-aaa6-9527346efc6f'
-browser.get(page_url_stub + pac_pool_id)
+
 # other initialization
 month_num2str = {
     1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June',
@@ -99,10 +104,12 @@ def nav_to_date(year, month, day, timeout=default_timeout):
     year : int
     month : int
     day : int
+    timeout : float
+        Timeout, in seconds, to wait for the page to load.
     """
 
     today = datetime.date.today()
-    two_years_from_today = today + datetime.timedelta(2*365) # add days to avoid leap year problems
+    two_years_from_today = today + datetime.timedelta(2*365)  # add days to avoid leap year problems
     requested_date = datetime.date(year, month, day)
 
     if requested_date < today or requested_date > two_years_from_today:
@@ -122,6 +129,117 @@ def nav_to_date(year, month, day, timeout=default_timeout):
     # check results
     loaded_ymd = get_date()
     assert (year, month, day) == loaded_ymd, 'Failed to load the requested date.'
+
+
+def get_events():
+    """
+    Scrape the list of events from the current page.
+
+    Returns
+    -------
+    parsed_events : list
+        List of events.
+        Each event is a dict with keys 'start', 'end', and 'info'.
+        'start' and 'end' are datetime objects corresponding to start and end times, respectively.
+        'info' is the textual description of the event.
+    """
+
+    # get the element containing all elements_in_schedule
+    event_container = browser.find_element_by_id(
+        'ctl00_contentMain_schedulerMain_containerBlock_verticalContainerappointmentLayer'
+    )
+
+    # get all child objects
+    elements_in_schedule = event_container.find_elements_by_xpath('.//*')
+
+    # get actual events
+    events = [elem for elem in elements_in_schedule if elem.get_attribute('id').endswith('_appointmentDiv')]
+
+    parsed_events = []
+
+    # record the date along with event info
+    date = get_date()
+
+    # scrape start and end time strings
+    for event in events:
+        # get all child objects
+        elements_in_event = event.find_elements_by_xpath('.//*')
+
+        # add in current date to start time, so we get a datetime object with all info in one place
+
+        event_full_text = event.get_attribute('innerText')
+
+        start_times = [elem for elem in elements_in_event if elem.get_attribute('id').endswith('_lblStartTime')]
+        assert len(start_times) == 1, 'Could not uniquely determine start time for event `%s`.' % event_full_text
+        start_time_str = '%d-%d-%d ' % date + start_times[0].get_attribute('innerText')
+
+        end_times = [elem for elem in elements_in_event if elem.get_attribute('id').endswith('_lblEndTime')]
+        assert len(end_times) == 1, 'Could not uniquely determine end time for event `%s`.' % event_full_text
+        end_time_str = '%d-%d-%d ' % date + end_times[0].get_attribute('innerText')
+
+        info = [elem for elem in elements_in_event if elem.get_attribute('id').endswith('_lblTitle')]
+        assert len(info) == 1, 'Could not uniquely determine description for event `%s`.' % event_full_text
+        info = info[0].get_attribute('innerText')
+
+        # make datetime objects to parse start and end times
+        start_time = datetime.datetime.strptime(start_time_str, '%Y-%m-%d %I:%M %p-')
+        end_time = datetime.datetime.strptime(end_time_str, '%Y-%m-%d %I:%M %p')
+
+        parsed_events.append({
+            'start': start_time,
+            'end': end_time,
+            'info': info
+        })
+
+        print 'Start time: %d:%02d' % (start_time.hour, start_time.minute)
+        print 'End time: %d:%02d' % (end_time.hour, end_time.minute)
+        print 'Event: %s' % info
+        print
+
+    return parsed_events
+
+
+def nav_to_url(url):
+    """
+    Ask the browser to fetch the page located at url.
+
+    Parameters
+    ----------
+    url : str
+        URL of page.
+    """
+
+    browser.get(url)
+
+
+def nav_to_local_file(filename):
+    """
+    Ask the browser to fetch the page located at the specified filename.
+
+    Parameters
+    ----------
+    filename : str
+        Filename of page to fetch.
+    """
+
+    url = urlparse.urljoin('file:', urllib.pathname2url(os.path.abspath(filename)))
+    nav_to_url(url)
+
+
+def export_page_to_file(filename):
+    """
+    Utility function that saves the current page (just DOM and HTML) to file.
+    Can be loaded into selenium again with nav_to_local_file(filename).
+
+    Parameters
+    ----------
+    filename : str
+        Name of file to save source to.
+    """
+
+    with codecs.open(filename, 'w', 'utf-8') as fd:
+        fd.write(browser.page_source)
+
 
 if __name__ == '__main__':
     main()

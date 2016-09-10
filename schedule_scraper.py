@@ -162,6 +162,7 @@ def get_events():
 
     # record the date along with event info
     date = get_date()
+    year, month, day = date
 
     # scrape start and end time strings
     for event in events:
@@ -188,11 +189,7 @@ def get_events():
         start_time = datetime.datetime.strptime(start_time_str, '%Y-%m-%d %I:%M %p-')
         end_time = datetime.datetime.strptime(end_time_str, '%Y-%m-%d %I:%M %p')
 
-        parsed_events.append({
-            'start': start_time,
-            'end': end_time,
-            'info': info
-        })
+        parsed_events.append((year, month, day, start_time.isoformat(), end_time.isoformat(), info))
 
     return parsed_events
 
@@ -238,6 +235,71 @@ def export_page_to_file(filename):
     with codecs.open(filename, 'w', 'utf-8') as fd:
         fd.write(browser.page_source)
 
+def init_db(filename):
+    """
+    Utility function that initializes an SQLite database file, makes the events table, then closes it.
+    Throws an sqlite3.Error if the table already exists in the database.
+
+    Parameters
+    ----------
+    filename : str
+        Name of the database file to use.
+
+    """
+
+    with sqlite3.connect(filename) as con:
+        c = con.cursor()
+
+        rows = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events';")
+        if len(list(rows)) > 0:
+            raise sqlite3.Error, 'Table `events` already exists.'
+
+        # make table
+        # database columns
+        # year, month, day, hour, minute, description
+        c.execute(
+            """
+            CREATE TABLE events
+            (year integer, month integer, day integer, start_time text, end_time text, description text)
+            """
+        )
+
+def update_day(con, year, month, day, event_tuples):
+    """
+    Replace all events currently in the database for a current date with the supplied event data.
+
+    Note that rollback() is called, so any uncommitted changes will be dropped at the beginning of this function.
+
+    Parameters
+    ----------
+    con : sqlite3.Connection
+        Connection to an open database.
+    year, month, day : int, int, int
+        Date being updated.
+    event_tuples : list of row tuples for the events table
+        Events to insert in the database.
+    """
+
+    # make sure nothing gets committed that wasn't performed by this function
+    con.rollback()
+
+    c = con.cursor()
+
+    if len(event_tuples) > 0:
+        # check that all events are from one day
+        same_year = [year == e[0] for e in event_tuples]
+        same_month = [month == e[1] for e in event_tuples]
+        same_day = [day == e[2] for e in event_tuples]
+
+        assert all(same_year) and all(same_month) and all(same_day)
+
+    # clear out old rows
+    c.execute('DELETE FROM events WHERE year=? AND month=? and day=?', (year, month, day))
+
+    # add current events in
+    c.executemany('INSERT INTO events VALUES (?,?,?, ?,?,?)', event_tuples)
+
+    con.commit()
 
 if __name__ == '__main__':
     main()

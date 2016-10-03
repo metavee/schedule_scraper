@@ -1,6 +1,7 @@
 import codecs
 import datetime
 import os
+import sqlite3
 import time
 import urllib
 import urlparse
@@ -250,17 +251,27 @@ def init_db(filename):
     with sqlite3.connect(filename) as con:
         c = con.cursor()
 
-        rows = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events';")
+        rows = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND (name='events' OR name='log');")
         if len(list(rows)) > 0:
             raise sqlite3.Error, 'Table `events` already exists.'
 
-        # make table
+        # make table for scheduled events
         # database columns
-        # year, month, day, hour, minute, description
+        # year, month, day, start time, end time, description
         c.execute(
             """
             CREATE TABLE events
             (year integer, month integer, day integer, start_time text, end_time text, description text)
+            """
+        )
+
+        # make table logging when daily schedule was last updated
+        # database columns
+        # day in schedule, time last updated
+        c.execute(
+            """
+            CREATE TABLE log
+            (sched_day text, mtime text)
             """
         )
 

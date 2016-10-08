@@ -15,10 +15,14 @@ process:
 import datetime
 import os
 import sqlite3
+import time
 
 import schedule_scraper as scsc
 
-db_fn = 'test.db'
+scsc.init_browser()
+scsc.nav_to_url(scsc.page_url_stub + scsc.pac_pool_id)
+
+db_fn = 'test08.db'
 if not os.path.exists(db_fn):
     scsc.init_db(db_fn)
 
@@ -32,72 +36,81 @@ rules = [
         'end': 13,
         'period': 60
     },
-    {
-        # update the following 2 weeks every 8 hours
-        'start': 14,
-        'end': 27,
-        'period': 8*60
-    },
-    {
-        # update the following month every 25 hours
-        'start': 28,
-        'end': 31*2,
-        'period': 25*60
-    }
+    # {
+    #     # update the following 2 weeks every 8 hours
+    #     'start': 14,
+    #     'end': 27,
+    #     'period': 8*60
+    # },
+    # {
+    #     # update the following month every 25 hours
+    #     'start': 28,
+    #     'end': 31*2,
+    #     'period': 25*60
+    # }
 ]
 
 con = sqlite3.connect(db_fn)
 c = con.cursor()
 
-wakeup_dt = datetime.datetime.now()
+while True:
 
-# Time to sleep until the next update.
-# Update this value later.
-next_sleep_length = rules[0]['period']
+    wakeup_dt = datetime.datetime.now()
 
-for rule in rules:
-    next_sleep_length = min(next_sleep_length, rule['period'])
+    # Time to sleep until the next update.
+    # Update this value later.
+    next_sleep_length = rules[0]['period']
 
-    # Read mtime of each day from database, and store time delta since last update here.
-    elapsed_times = {}
+    for rule in rules:
+        next_sleep_length = min(next_sleep_length, rule['period'])
 
-    start =  (datetime.timedelta(rule['start']) + datetime.date.today()).isoformat()
-    end =  (datetime.timedelta(rule['end']) + datetime.date.today()).isoformat()
+        # Read mtime of each day from database, and store time delta since last update here.
+        elapsed_times = {}
 
-    rows = c.execute(
-        """
-        SELECT * FROM log
-        WHERE date(sched_day) >= date(?)
-          AND date(sched_day) <= date(?)
-        """, (start, end)
-    )
+        start =  (datetime.timedelta(rule['start']) + datetime.date.today()).isoformat()
+        end =  (datetime.timedelta(rule['end']) + datetime.date.today()).isoformat()
 
-    max_interval = datetime.timedelta(minutes=rule['period'])
+        rows = c.execute(
+            """
+            SELECT * FROM log
+            WHERE date(sched_day) >= date(?)
+              AND date(sched_day) <= date(?)
+            """, (start, end)
+        )
 
-    for r in rows:
-        mtime = datetime.datetime.strptime(r[-1], '%Y-%m-%d %H:%M:%S')
+        max_interval = datetime.timedelta(minutes=rule['period'])
 
-        # Caching elapsed_time might be out-of-date by a few minutes,
-        # depending on how long it takes to get through the rule.
-        # This is an acceptable level of error.
-        elapsed_times[r[0]] =  wakeup_dt - mtime
+        for r in rows:
+            mtime = datetime.datetime.strptime(r[-1], '%Y-%m-%d %H:%M:%S')
 
-    for delta in range(rule['start'], rule['end']):
-        datestr = (datetime.date.today() + datetime.timedelta(delta)).isoformat()
+            # Caching elapsed_time might be out-of-date by a few minutes,
+            # depending on how long it takes to get through the rule.
+            # This is an acceptable level of error.
+            elapsed_times[r[0]] =  wakeup_dt - mtime
 
-        # Update if last modification was too long ago.
-        # Days that are included in the rule but not found in database need to be updated.
-        if datestr not in elapsed_times or elapsed_times[datestr] > max_interval:
-            # print 'Needs update.'
-            pass
-        else:
-            minutes_left = (max_interval - elapsed_times[datestr]).total_seconds() / 60
-            next_sleep_length = min(next_sleep_length, minutes_left)
+        for delta in range(rule['start'], rule['end']):
+            dateobj = datetime.date.today() + datetime.timedelta(delta)
+            datestr = dateobj.isoformat()
 
-# Clear old rows from database.
-c.execute('DELETE FROM log WHERE date(sched_day) < date(?)', (datetime.date.today().isoformat(),))
-con.commit()
+            # Update if last modification was too long ago.
+            # Days that are included in the rule but not found in database need to be updated.
+            if datestr not in elapsed_times or elapsed_times[datestr] > max_interval:
+                print '%s needs update.' % datestr
+                scsc.nav_to_date(dateobj.year, dateobj.month, dateobj.day)
+                events = scsc.get_events()
+                scsc.update_day(con, dateobj.year, dateobj.month, dateobj.day, events)
+                print 'Done'
+            else:
+                print '%s does not need update.' % datestr
+                minutes_left = (max_interval - elapsed_times[datestr]).total_seconds() / 60
+                next_sleep_length = min(next_sleep_length, minutes_left)
 
-con.close()
+    # Clear old rows from database.
+    c.execute('DELETE FROM log WHERE date(sched_day) < date(?)', (datetime.date.today().isoformat(),))
+    con.commit()
 
-print 'sleep interval: %d minutes' % int(next_sleep_length)
+    con.close()
+
+    print 'sleep interval: %d minutes' % int(next_sleep_length)
+
+    time.sleep(next_sleep_length * 60)

@@ -26,7 +26,7 @@ def main():
 
 # options
 # timeout interval (seconds)
-default_timeout = 59.
+default_timeout = 30.
 
 page_url_stub = 'https://nike.uwaterloo.ca/FacilityScheduling/FacilitySchedule.aspx?FacilityId='
 pac_pool_id = '5d72208a-069d-4931-aaa6-9527346efc6f'
@@ -79,6 +79,9 @@ def wait_for_page_load(timeout_sec, fun, *args, **kwargs):
     # watch date element -- it should expire when page load finishes, resulting in an exception
     elem_day = browser.find_element_by_class_name('dxscDateHeader_Metropolis')
 
+    # this detection method is unreliable, so also check if the date just changes without exception
+    old_day = get_date()
+
     fun(*args, **kwargs)
 
     time_slept = 0.
@@ -89,8 +92,11 @@ def wait_for_page_load(timeout_sec, fun, *args, **kwargs):
             time.sleep(0.5)
             time_slept += 0.5
 
-        # if the loop exits normally, too much time has passed
-        raise RuntimeError('Timeout occurred when waiting for page to load.')
+        new_day = get_date()
+
+        # if the loop exits normally and the day hasn't changed, too much time has passed
+        if old_day == new_day:
+            raise RuntimeError('Timeout occurred when waiting for page to load.')
     except StaleElementReferenceException:
         pass
 
@@ -190,7 +196,7 @@ def get_events():
         start_time = datetime.datetime.strptime(start_time_str, '%Y-%m-%d %I:%M %p-')
         end_time = datetime.datetime.strptime(end_time_str, '%Y-%m-%d %I:%M %p')
 
-        parsed_events.append((year, month, day, start_time.isoformat(), end_time.isoformat(), info))
+        parsed_events.append((year, month, day, start_time.strftime('%Y-%m-%d %H:%M:%S'), end_time.strftime('%Y-%m-%d %H:%M:%S'), info))
 
     return parsed_events
 
@@ -309,6 +315,13 @@ def update_day(con, year, month, day, event_tuples):
 
     # add current events in
     c.executemany('INSERT INTO events VALUES (?,?,?, ?,?,?)', event_tuples)
+
+    # Update the modification timestamp for this day.
+    # Since the record might not even exist, just DELETE and re-INSERT instead of UPDATE.
+    datestr = datetime.date(year=year, month=month, day=day).strftime('%Y-%m-%d')
+    mtime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    c.execute('DELETE FROM log WHERE sched_day = ?', (datestr,))
+    c.execute('INSERT INTO log VALUES (?, ?)', (datestr, mtime))
 
     con.commit()
 

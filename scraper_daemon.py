@@ -22,6 +22,9 @@ import schedule_scraper as scsc
 scsc.init_browser()
 scsc.nav_to_url(scsc.page_url_stub + scsc.pac_pool_id)
 
+# how many minutes to oversleep, to ensure that there is stuff to do after waking up
+sleep_buffer = 5.
+
 db_fn = 'test08.db'
 if not os.path.exists(db_fn):
     scsc.init_db(db_fn)
@@ -50,24 +53,26 @@ rules = [
     # }
 ]
 
-con = sqlite3.connect(db_fn)
-c = con.cursor()
 
 while True:
+    wakeup_dt = datetime.datetime.now()
+
+    print 'The current time is %s.' % wakeup_dt.strftime(scsc.datetime_fmt)
+
+    con = sqlite3.connect(db_fn)
+    c = con.cursor()
 
     todaystr = datetime.date.today().strftime(scsc.date_fmt)
 
-    wakeup_dt = datetime.datetime.now()
 
-    # Time to sleep until the next update.
+    # Time to wake up to do the next update.
     # Update this value later.
-    next_sleep_length = rules[0]['period']
+    next_wakeup_time = wakeup_dt + datetime.timedelta(minutes=rules[0]['period'])
 
     for rule in rules:
-        next_sleep_length = min(next_sleep_length, rule['period'])
 
-        # Read mtime of each day from database, and store time delta since last update here.
-        elapsed_times = {}
+        # Read mtime of each day from database, and store next update time here.
+        next_updates = {}
 
         start =  (datetime.timedelta(rule['start']) + datetime.date.today()).strftime(scsc.date_fmt)
         end =  (datetime.timedelta(rule['end']) + datetime.date.today()).strftime(scsc.date_fmt)
@@ -88,7 +93,7 @@ while True:
             # Caching elapsed_time might be out-of-date by a few minutes,
             # depending on how long it takes to get through the rule.
             # This is an acceptable level of error.
-            elapsed_times[r[0]] =  wakeup_dt - mtime
+            next_updates[r[0]] =  mtime + max_interval
 
         for delta in range(rule['start'], rule['end']):
             dateobj = datetime.date.today() + datetime.timedelta(delta)
@@ -96,16 +101,15 @@ while True:
 
             # Update if last modification was too long ago.
             # Days that are included in the rule but not found in database need to be updated.
-            if datestr not in elapsed_times or elapsed_times[datestr] > max_interval:
+            if datestr not in next_updates or next_updates[datestr] < wakeup_dt:
                 print '%s needs update.' % datestr
                 scsc.nav_to_date(dateobj.year, dateobj.month, dateobj.day)
                 events = scsc.get_events()
                 scsc.update_day(con, dateobj.year, dateobj.month, dateobj.day, events)
                 print 'Done'
             else:
-                print '%s does not need update.' % datestr
-                minutes_left = (max_interval - elapsed_times[datestr]).total_seconds() / 60
-                next_sleep_length = min(next_sleep_length, minutes_left)
+                print '%s does not need update until %s.' % (datestr, next_updates[datestr])
+                next_wakeup_time = min(next_wakeup_time, next_updates[datestr])
 
     # Clear old rows from database.
     c.execute('DELETE FROM log WHERE date(sched_day) < date(?)', (todaystr,))
@@ -113,6 +117,10 @@ while True:
 
     con.close()
 
-    print 'sleep interval: %d minutes' % int(next_sleep_length)
+    minutes_left = (next_wakeup_time - datetime.datetime.now()).total_seconds() / 60 + sleep_buffer
 
-    time.sleep(next_sleep_length * 60)
+    print 'Sleep interval: %d minutes.' % int(minutes_left)
+    print 'Should wake up at %s.' % ((datetime.datetime.now() + datetime.timedelta(minutes=minutes_left)).strftime(scsc.datetime_fmt))
+
+    time.sleep(minutes_left * 60)
+    print 'Done sleeping.'

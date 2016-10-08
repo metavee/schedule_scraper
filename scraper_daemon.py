@@ -55,6 +55,8 @@ c = con.cursor()
 
 while True:
 
+    todaystr = datetime.date.today().strftime(scsc.date_fmt)
+
     wakeup_dt = datetime.datetime.now()
 
     # Time to sleep until the next update.
@@ -67,8 +69,8 @@ while True:
         # Read mtime of each day from database, and store time delta since last update here.
         elapsed_times = {}
 
-        start =  (datetime.timedelta(rule['start']) + datetime.date.today()).isoformat()
-        end =  (datetime.timedelta(rule['end']) + datetime.date.today()).isoformat()
+        start =  (datetime.timedelta(rule['start']) + datetime.date.today()).strftime(scsc.date_fmt)
+        end =  (datetime.timedelta(rule['end']) + datetime.date.today()).strftime(scsc.date_fmt)
 
         rows = c.execute(
             """
@@ -81,7 +83,7 @@ while True:
         max_interval = datetime.timedelta(minutes=rule['period'])
 
         for r in rows:
-            mtime = datetime.datetime.strptime(r[-1], '%Y-%m-%d %H:%M:%S')
+            mtime = datetime.datetime.strptime(r[-1], scsc.datetime_fmt)
 
             # Caching elapsed_time might be out-of-date by a few minutes,
             # depending on how long it takes to get through the rule.
@@ -90,7 +92,7 @@ while True:
 
         for delta in range(rule['start'], rule['end']):
             dateobj = datetime.date.today() + datetime.timedelta(delta)
-            datestr = dateobj.isoformat()
+            datestr = dateobj.strftime(scsc.date_fmt)
 
             # Update if last modification was too long ago.
             # Days that are included in the rule but not found in database need to be updated.
@@ -106,7 +108,7 @@ while True:
                 next_sleep_length = min(next_sleep_length, minutes_left)
 
     # Clear old rows from database.
-    c.execute('DELETE FROM log WHERE date(sched_day) < date(?)', (datetime.date.today().isoformat(),))
+    c.execute('DELETE FROM log WHERE date(sched_day) < date(?)', (todaystr,))
     con.commit()
 
     con.close()

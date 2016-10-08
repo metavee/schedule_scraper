@@ -55,16 +55,16 @@ class TestArchivedPages(TestCase):
         # look at a few events
         ev4 = events[4]
         self.assertEqual(ev4[0:3], (2016, 9, 21))
-        start_time = datetime.datetime(2016, 9, 21, 13, 0).isoformat()
-        end_time = datetime.datetime(2016, 9, 21, 15, 0).isoformat()
+        start_time = datetime.datetime(2016, 9, 21, 13, 0).strftime(scsc.datetime_fmt)
+        end_time = datetime.datetime(2016, 9, 21, 15, 0).strftime(scsc.datetime_fmt)
         self.assertEqual(ev4[3], start_time)
         self.assertEqual(ev4[4], end_time)
         self.assertEqual(ev4[5], 'Subject: Varsity Swimming')
 
         ev5 = events[5]
         self.assertEqual(ev5[0:3], (2016, 9, 21))
-        start_time = datetime.datetime(2016, 9, 21, 13, 0).isoformat()
-        end_time = datetime.datetime(2016, 9, 21, 14, 0).isoformat()
+        start_time = datetime.datetime(2016, 9, 21, 13, 0).strftime(scsc.datetime_fmt)
+        end_time = datetime.datetime(2016, 9, 21, 14, 0).strftime(scsc.datetime_fmt)
         self.assertEqual(ev5[3], start_time)
         self.assertEqual(ev5[4], end_time)
         self.assertEqual(ev5[5], 'Course: Fall 2016 - Fitness Swimmer - Co-ed - 10 classes - Fit Swim - Wed')

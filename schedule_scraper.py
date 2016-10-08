@@ -38,6 +38,8 @@ month_num2str = {
 }
 month_str2num = {name: number for (number, name) in month_num2str.items()}
 
+date_fmt = '%Y-%m-%d'
+datetime_fmt = '%Y-%m-%d %H:%M:%S'
 
 def get_date():
     """
@@ -196,7 +198,7 @@ def get_events():
         start_time = datetime.datetime.strptime(start_time_str, '%Y-%m-%d %I:%M %p-')
         end_time = datetime.datetime.strptime(end_time_str, '%Y-%m-%d %I:%M %p')
 
-        parsed_events.append((year, month, day, start_time.strftime('%Y-%m-%d %H:%M:%S'), end_time.strftime('%Y-%m-%d %H:%M:%S'), info))
+        parsed_events.append((year, month, day, start_time.strftime(datetime_fmt), end_time.strftime(datetime_fmt), info))
 
     return parsed_events
 
@@ -318,8 +320,8 @@ def update_day(con, year, month, day, event_tuples):
 
     # Update the modification timestamp for this day.
     # Since the record might not even exist, just DELETE and re-INSERT instead of UPDATE.
-    datestr = datetime.date(year=year, month=month, day=day).strftime('%Y-%m-%d')
-    mtime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    datestr = datetime.date(year=year, month=month, day=day).strftime(date_fmt)
+    mtime = datetime.datetime.now().strftime(datetime_fmt)
     c.execute('DELETE FROM log WHERE sched_day = ?', (datestr,))
     c.execute('INSERT INTO log VALUES (?, ?)', (datestr, mtime))
 

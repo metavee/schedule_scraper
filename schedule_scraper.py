@@ -9,9 +9,12 @@ import urlparse
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 
-def init_browser():
+def init_browser(debug_mode=False):
     global browser
-    browser = webdriver.Chrome()
+    if debug_mode:
+        browser = webdriver.Chrome()
+    else:
+        browser = webdriver.PhantomJS()
 
 def main():
     # open the page

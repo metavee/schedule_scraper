@@ -12,6 +12,7 @@ process:
 -sleep until next update is needed
 """
 
+from collections import defaultdict
 import datetime
 import os
 import sqlite3
@@ -57,7 +58,7 @@ def maintain_schedules(db_fn, rules, sleep_buffer):
     if not os.path.exists(db_fn):
         scsc.init_db(db_fn)
 
-    scsc.init_browser()
+    scsc.init_browser(debug_mode)
     scsc.nav_to_url(scsc.page_url_stub + scsc.pac_pool_id)
 
     while True:
@@ -66,60 +67,31 @@ def maintain_schedules(db_fn, rules, sleep_buffer):
         print 'The current time is %s.' % wakeup_dt.strftime(scsc.datetime_fmt)
 
         con = sqlite3.connect(db_fn)
-        c = con.cursor()
-
-        todaystr = datetime.date.today().strftime(scsc.date_fmt)
-
 
         # Time to wake up to do the next update.
         # Update this value later.
         next_wakeup_time = wakeup_dt + datetime.timedelta(minutes=rules[0]['period'])
 
         for rule in rules:
+            # list of days that this rule applies to
+            dates = get_dates(rule)
 
             # Read mtime of each day from database, and store next update time here.
-            next_updates = {}
+            next_updates = get_update_times(rule, con)
 
-            start =  (datetime.timedelta(rule['start']) + datetime.date.today()).strftime(scsc.date_fmt)
-            end =  (datetime.timedelta(rule['end']) + datetime.date.today()).strftime(scsc.date_fmt)
-
-            rows = c.execute(
-                """
-                SELECT * FROM log
-                WHERE date(sched_day) >= date(?)
-                  AND date(sched_day) <= date(?)
-                """, (start, end)
-            )
-
-            max_interval = datetime.timedelta(minutes=rule['period'])
-
-            for r in rows:
-                mtime = datetime.datetime.strptime(r[-1], scsc.datetime_fmt)
-
-                # Caching elapsed_time might be out-of-date by a few minutes,
-                # depending on how long it takes to get through the rule.
-                # This is an acceptable level of error.
-                next_updates[r[0]] =  mtime + max_interval
-
-            for delta in range(rule['start'], rule['end']):
-                dateobj = datetime.date.today() + datetime.timedelta(delta)
-                datestr = dateobj.strftime(scsc.date_fmt)
-
-                # Update if last modification was too long ago.
-                # Days that are included in the rule but not found in database need to be updated.
-                if datestr not in next_updates or next_updates[datestr] < wakeup_dt:
+            for date in dates:
+                datestr = date.strftime(scsc.date_fmt)
+                if next_updates[date] < datetime.datetime.now():
                     print '%s needs update.' % datestr
-                    scsc.nav_to_date(dateobj.year, dateobj.month, dateobj.day)
+                    scsc.nav_to_date(date.year, date.month, date.day)
                     events = scsc.get_events()
-                    scsc.update_day(con, dateobj.year, dateobj.month, dateobj.day, events)
+                    scsc.update_day(con, date.year, date.month, date.day, events)
                     print 'Done'
                 else:
-                    print '%s does not need update until %s.' % (datestr, next_updates[datestr])
-                    next_wakeup_time = min(next_wakeup_time, next_updates[datestr])
+                    print '%s does not need update until %s.' % (datestr, next_updates[date])
+                    next_wakeup_time = min(next_wakeup_time, next_updates[date])
 
-        # Clear old rows from database.
-        c.execute('DELETE FROM log WHERE date(sched_day) < date(?)', (todaystr,))
-        con.commit()
+        clear_old_rows(con)
 
         con.close()
 
@@ -130,6 +102,47 @@ def maintain_schedules(db_fn, rules, sleep_buffer):
 
         time.sleep(minutes_left * 60)
         print 'Done sleeping.'
+
+
+def get_dates(rule):
+    return [datetime.date.today() + datetime.timedelta(delta) for delta in range(rule['start'], rule['end'])]
+
+
+def get_update_times(rule, con):
+    c = con.cursor()
+
+    max_interval = datetime.timedelta(minutes=rule['period'])
+
+    # get update log from database
+    start = (datetime.timedelta(rule['start']) + datetime.date.today()).strftime(scsc.date_fmt)
+    end = (datetime.timedelta(rule['end']) + datetime.date.today()).strftime(scsc.date_fmt)
+
+    rows = c.execute(
+        """
+        SELECT * FROM log
+        WHERE date(sched_day) >= date(?)
+          AND date(sched_day) <= date(?)
+        """, (start, end)
+    )
+
+    # dictionary listing the next time a given day's schedule should be updated
+    # if there's no record yet in the database, set next update time in the past to force update
+    next_updates = defaultdict(lambda: datetime.datetime.now() - datetime.timedelta(1))
+
+    for r in rows:
+        sched_day = datetime.datetime.strptime(r[0], scsc.date_fmt).date()
+        mtime = datetime.datetime.strptime(r[-1], scsc.datetime_fmt)
+        next_updates[sched_day] = mtime + max_interval
+
+    return next_updates
+
+def clear_old_rows(con):
+    todaystr = datetime.date.today().strftime(scsc.date_fmt)
+
+    con.rollback()
+    c = con.cursor()
+    c.execute('DELETE FROM log WHERE date(sched_day) < date(?)', (todaystr,))
+    con.commit()
 
 if __name__ == '__main__':
     if debug_mode:

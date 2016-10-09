@@ -1,15 +1,5 @@
 """
 Background service/daemon which periodically scrapes the schedule.
-
-process:
--start/wake up from sleep
--get current datetime
--get list of rules about when to update which schedule
--for each rule, get list of days it applies to, and time they were last updated
--check if an update is due
--run updates to schedule, and update the last-updated field
--clear old entries from log
--sleep until next update is needed
 """
 
 from collections import defaultdict
@@ -54,7 +44,20 @@ rules = [
     # }
 ]
 
-def maintain_schedules(db_fn, rules, sleep_buffer):
+def maintain_schedules(db_fn, rules, sleep_buffer=5.):
+    """
+    Update the schedules periodically.
+
+    Parameters
+    ----------
+    db_fn : str
+        Name of database file to use.
+    rules : list
+        List of rules describing update frequency for different spans of dates.
+    sleep_buffer : float
+        Amount of time to oversleep, in minutes.
+    """
+
     if not os.path.exists(db_fn):
         scsc.init_db(db_fn)
 
@@ -63,52 +66,95 @@ def maintain_schedules(db_fn, rules, sleep_buffer):
 
     while True:
         wakeup_dt = datetime.datetime.now()
-
         print 'The current time is %s.' % wakeup_dt.strftime(scsc.datetime_fmt)
 
-        con = sqlite3.connect(db_fn)
-
-        # Time to wake up to do the next update.
-        # Update this value later.
-        next_wakeup_time = wakeup_dt + datetime.timedelta(minutes=rules[0]['period'])
-
-        for rule in rules:
-            # list of days that this rule applies to
-            dates = get_dates(rule)
-
-            # Read mtime of each day from database, and store next update time here.
-            next_updates = get_update_times(rule, con)
-
-            for date in dates:
-                datestr = date.strftime(scsc.date_fmt)
-                if next_updates[date] < datetime.datetime.now():
-                    print '%s needs update.' % datestr
-                    scsc.nav_to_date(date.year, date.month, date.day)
-                    events = scsc.get_events()
-                    scsc.update_day(con, date.year, date.month, date.day, events)
-                    print 'Done'
-                else:
-                    print '%s does not need update until %s.' % (datestr, next_updates[date])
-                    next_wakeup_time = min(next_wakeup_time, next_updates[date])
-
-        clear_old_rows(con)
-
-        con.close()
-
-        minutes_left = (next_wakeup_time - datetime.datetime.now()).total_seconds() / 60 + sleep_buffer
+        # run updates
+        minutes_left = update(db_fn, rules)
 
         print 'Sleep interval: %d minutes.' % int(minutes_left)
-        print 'Should wake up at %s.' % ((datetime.datetime.now() + datetime.timedelta(minutes=minutes_left)).strftime(scsc.datetime_fmt))
+        print 'Should wake up at %s.' % (
+        (datetime.datetime.now() + datetime.timedelta(minutes=minutes_left)).strftime(scsc.datetime_fmt))
 
-        time.sleep(minutes_left * 60)
+        time.sleep(minutes_left * 60 + sleep_buffer)
         print 'Done sleeping.'
 
 
+def update(db_fn, rules):
+    """
+    Update the schedule.
+
+    Parameters
+    ----------
+    db_fn : str
+        Name of database file to use.
+    rules : list
+        List of rules describing update frequency for different spans of dates.
+
+    Returns
+    -------
+    minutes_left : float
+        Number of minutes between now and the next time the schedule needs to be updated.
+    """
+
+    con = sqlite3.connect(db_fn)
+
+    # Time to wake up to do the next update.
+    # Update this value later.
+    next_wakeup_time = datetime.datetime.now() + datetime.timedelta(minutes=rules[0]['period'])
+
+    for rule in rules:
+        # list of days that this rule applies to
+        dates = get_dates(rule)
+
+        # Read mtime of each day from database, and store next update time here.
+        next_updates = get_update_times(rule, con)
+
+        for date in dates:
+            datestr = date.strftime(scsc.date_fmt)
+            if next_updates[date] < datetime.datetime.now():
+                print '%s needs update.' % datestr
+                scsc.nav_to_date(date.year, date.month, date.day)
+                events = scsc.get_events()
+                scsc.update_day(con, date.year, date.month, date.day, events)
+                print 'Done'
+            else:
+                print '%s does not need update until %s.' % (datestr, next_updates[date])
+                next_wakeup_time = min(next_wakeup_time, next_updates[date])
+
+    clear_old_rows(con)
+
+    con.close()
+
+    minutes_left = (next_wakeup_time - datetime.datetime.now()).total_seconds() / 60
+
+    return minutes_left
+
+
 def get_dates(rule):
+    """
+    Returns a list of date objects that the rule applies to.
+    """
+
     return [datetime.date.today() + datetime.timedelta(delta) for delta in range(rule['start'], rule['end'])]
 
 
 def get_update_times(rule, con):
+    """
+    Get the times when each day in a rule should get updated next.
+
+    Parameters
+    ----------
+    rule
+        Rule describing update frequency for different spans of dates.
+    con : sqlite3 connection
+        Connection to database
+
+    Returns
+    -------
+    next_updates : defaultdict
+        Dictionary, keyed with date objects, containing times when that date should get updated.
+    """
+
     c = con.cursor()
 
     max_interval = datetime.timedelta(minutes=rule['period'])
@@ -137,6 +183,9 @@ def get_update_times(rule, con):
     return next_updates
 
 def clear_old_rows(con):
+    """
+    Delete old rows from the update log in the database, where old is anything before today.
+    """
     todaystr = datetime.date.today().strftime(scsc.date_fmt)
 
     con.rollback()

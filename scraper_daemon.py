@@ -135,7 +135,7 @@ def get_dates(rule):
     Returns a list of date objects that the rule applies to.
     """
 
-    return [datetime.date.today() + datetime.timedelta(delta) for delta in range(rule['start'], rule['end'])]
+    return [datetime.date.today() + datetime.timedelta(delta) for delta in range(rule['start'], rule['end'] + 1)]
 
 
 def get_update_times(rule, con):

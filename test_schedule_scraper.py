@@ -4,6 +4,40 @@ from unittest import TestCase
 
 import schedule_scraper as scsc
 
+import scraper_daemon as sd
+
+class TestScraperDaemon(TestCase):
+
+    def test_get_dates(self):
+        """
+        Test basic functionality of get_dates, namely that it returns the right list of dates for a rule.
+        """
+
+        today = datetime.date.today()
+        delta = lambda d: datetime.timedelta(days=d)
+
+        rule1 = {
+            'start': 0,
+            'end': 2,
+            'period': 60
+        }
+
+        dates1 = sd.get_dates(rule1)
+        expected1 = [today, today + delta(1), today + delta(2)]
+
+        self.assertEqual(dates1, expected1)
+
+        rule2 = {
+            'start': 1,
+            'end': 10,
+            'period': 60
+        }
+        dates2 = sd.get_dates(rule2)
+        self.assertEqual(today + delta(1), dates2[0])
+        self.assertEqual(dates2[-1] - today, delta(10))
+        self.assertEqual(len(dates2), 10)
+
+
 class TestArchivedPages(TestCase):
 
     """

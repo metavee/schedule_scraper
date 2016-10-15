@@ -247,10 +247,45 @@ def export_page_to_file(filename):
     with codecs.open(filename, 'w', 'utf-8') as fd:
         fd.write(browser.page_source)
 
-def init_db(filename):
+def init_db_con(con):
     """
     Utility function that initializes an SQLite database file, makes the events table, then closes it.
     Throws an sqlite3.Error if the table already exists in the database.
+
+    Parameters
+    ----------
+    con : sqlite3 connection
+    """
+
+    c = con.cursor()
+
+    rows = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND (name='events' OR name='log');")
+    if len(list(rows)) > 0:
+        raise sqlite3.Error, 'Table `events` already exists.'
+
+    # make table for scheduled events
+    # database columns
+    # year, month, day, start time, end time, description
+    c.execute(
+        """
+        CREATE TABLE events
+        (year integer, month integer, day integer, start_time text, end_time text, description text)
+        """
+    )
+
+    # make table logging when daily schedule was last updated
+    # database columns
+    # day in schedule, time last updated
+    c.execute(
+        """
+        CREATE TABLE log
+        (sched_day text, mtime text)
+        """
+    )
+
+def init_db(filename):
+    """
+    Utility function that wraps around init_db_con.
 
     Parameters
     ----------
@@ -260,31 +295,7 @@ def init_db(filename):
     """
 
     with sqlite3.connect(filename) as con:
-        c = con.cursor()
-
-        rows = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND (name='events' OR name='log');")
-        if len(list(rows)) > 0:
-            raise sqlite3.Error, 'Table `events` already exists.'
-
-        # make table for scheduled events
-        # database columns
-        # year, month, day, start time, end time, description
-        c.execute(
-            """
-            CREATE TABLE events
-            (year integer, month integer, day integer, start_time text, end_time text, description text)
-            """
-        )
-
-        # make table logging when daily schedule was last updated
-        # database columns
-        # day in schedule, time last updated
-        c.execute(
-            """
-            CREATE TABLE log
-            (sched_day text, mtime text)
-            """
-        )
+        init_db_con(con)
 
 def update_day(con, year, month, day, event_tuples):
     """

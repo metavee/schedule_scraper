@@ -8,7 +8,11 @@ import os
 import sqlite3
 import time
 
-import daemon
+# Daemon or one of its prerequisite libraries may not be available, particularly on Windows.
+try:
+    import daemon
+except ImportError:
+    print 'Could not create daemon process. Running in current process.'
 
 import schedule_scraper as scsc
 
@@ -194,7 +198,7 @@ def clear_old_rows(con):
     con.commit()
 
 if __name__ == '__main__':
-    if debug_mode:
+    if debug_mode or 'daemon' not in locals():
         maintain_schedules(db_fn, rules, sleep_buffer)
     else:
         with daemon.DaemonContext(working_directory='.', stdout=open('./scsc_stdout.log', 'a'), stderr=open('./scsc_stderr.log', 'a')):

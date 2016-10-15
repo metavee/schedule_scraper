@@ -2,11 +2,18 @@ import datetime
 import os
 from unittest import TestCase
 
+import sqlite3
+
 import schedule_scraper as scsc
 
 import scraper_daemon as sd
 
 class TestScraperDaemon(TestCase):
+
+    # test that clear_old_rows works
+    # test that update returns something reasonable for the next update time
+        # this may involve stubbing out nav_to_date and update_day
+    # test that get_update_times returns correct update times
 
     def test_get_dates(self):
         """
@@ -102,6 +109,98 @@ class TestArchivedPages(TestCase):
         self.assertEqual(ev5[3], start_time)
         self.assertEqual(ev5[4], end_time)
         self.assertEqual(ev5[5], 'Course: Fall 2016 - Fitness Swimmer - Co-ed - 10 classes - Fit Swim - Wed')
+
+    def test_update_day(self):
+        """
+        Test that schedule info is properly added to the database events and log tables.
+        """
+
+        # prep database
+        con = sqlite3.connect(':memory:')
+        scsc.init_db_con(con)
+        c = con.cursor()
+
+        # put some pre-existing events in
+        old_events = [
+            (2016, 9, 21, '2016-09-21 06:00:00', '2016-09-21 08:00:00', 'description 1'),
+            (2016, 10, 16, '2016-10-16 06:00:00', '2016-10-16 08:00:00', 'description 2'),
+            (2016, 10, 17, '2016-10-17 06:00:00', '2016-10-17 08:00:00', 'description 3')
+        ]
+        for ev in old_events:
+            c.execute('INSERT INTO events VALUES (?, ?, ?, ?, ?, ?)', ev)
+
+        con.commit()
+
+        # run update schedule on day and make sure new entry is added, and old entry is overwritten
+        scsc.nav_to_local_file(self.file_20160921)
+        events = scsc.get_events()
+
+        # get lower and upper bound of timestamp for update_day
+        mtime_lower = datetime.datetime.now()
+        scsc.update_day(con, 2016, 9, 21, events)
+        mtime_upper = datetime.datetime.now()
+
+        # check events table for this day
+        rows = c.execute(
+            """
+            SELECT * FROM events
+            WHERE year = ?
+              AND month = ?
+              AND day = ?
+            """, (2016, 9, 21)
+        )
+
+        for i, r in enumerate(rows):
+            # make sure pre-existing event was cleared out
+            self.assertNotEqual(r[5], 'description 1')
+
+            # check that particular event got added
+            if i == 4:
+                self.assertEqual(r[0:3], (2016, 9, 21))
+                start_time = datetime.datetime(2016, 9, 21, 13, 0).strftime(scsc.datetime_fmt)
+                end_time = datetime.datetime(2016, 9, 21, 15, 0).strftime(scsc.datetime_fmt)
+                self.assertEqual(r[3], start_time)
+                self.assertEqual(r[4], end_time)
+                self.assertEqual(r[5], 'Subject: Varsity Swimming')
+
+        # make sure this update is reflected in the log
+        rows = c.execute(
+            """
+            SELECT mtime FROM log
+            WHERE date(sched_day) = date(?)
+            """, ('2016-09-21',)
+        )
+
+        # mtime should fall between mtime_lower and mtime_upper
+        # mtime in the log doesn't store microseconds, so there is some loss of precision
+        # drop microseconds from mtime_upper and mtime_lower to resolve
+        mtime_lower -= datetime.timedelta(microseconds=mtime_lower.microsecond)
+        mtime_upper -= datetime.timedelta(microseconds=mtime_upper.microsecond)
+        mtime = datetime.datetime.strptime(rows.next()[0], scsc.datetime_fmt)
+        self.assertLessEqual(mtime_lower, mtime)
+        self.assertGreaterEqual(mtime_upper, mtime)
+
+        # run the update again, and make sure there are no duplicate log entries for this day
+        scsc.update_day(con, 2016, 9, 21, events)
+        rows = c.execute(
+            """
+            SELECT mtime FROM log
+            WHERE date(sched_day) = date(?)
+            """, ('2016-09-21',)
+        )
+        self.assertEqual(len(list(rows)), 1)
+
+        # test that events from other days were not disturbed
+        rows = c.execute(
+            """
+            SELECT * FROM events
+            WHERE year = ?
+              AND month = ?
+            """, (2016, 10)
+        )
+        self.assertEqual(rows.next(), old_events[1])
+        self.assertEqual(rows.next(), old_events[2])
+
 
 
 class TestLiveSite(TestCase):
